@@ -1,0 +1,1487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WORD RAIN</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Bebas+Neue&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0a;--fg:#fff;--dim:#888;--dim2:#555;
+  --danger:#ff3333;--combo:#ffcc00;--rampage:#ff6600;
+  --life:#44ffaa;--ach:#aa88ff;
+  --sp-clear:#00eeff;--sp-bomb:#ff44bb;
+}
+
+/* ── LAYOUT ── */
+body{
+  background:var(--bg);color:var(--fg);
+  font-family:'Share Tech Mono',monospace;
+  height:100vh;overflow:hidden;
+  display:flex;flex-direction:column;align-items:center;
+  user-select:none;
+}
+body::after{
+  content:'';position:fixed;inset:0;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(255,255,255,0.01) 2px,rgba(255,255,255,0.01) 4px);
+  pointer-events:none;z-index:999;
+}
+
+/* ── HUD ── */
+#hud{
+  width:100%;max-width:860px;padding:12px 24px 6px;
+  display:flex;justify-content:space-between;align-items:flex-start;
+  flex-shrink:0;
+}
+#hud-left{display:flex;flex-direction:column;gap:4px}
+#title{font-family:'Bebas Neue',sans-serif;font-size:1.9rem;letter-spacing:0.15em}
+#lives{display:flex;gap:5px;align-items:center;margin-top:2px}
+.life{width:9px;height:9px;background:var(--fg);transition:all 0.25s}
+.life.lost{background:transparent;border:1px solid #444;transform:scale(0.7)}
+.life.gained{animation:life-flash 0.7s ease}
+@keyframes life-flash{0%,100%{background:var(--fg)}45%{background:var(--life);box-shadow:0 0 12px var(--life)}}
+
+#hud-mid{display:flex;flex-direction:column;align-items:center;gap:4px}
+#rampage-bar-wrap{display:flex;align-items:center;gap:7px}
+#rampage-label{font-size:0.52rem;color:var(--dim2);letter-spacing:0.2em;white-space:nowrap;transition:color 0.3s}
+#rampage-label.hot{color:var(--rampage)}
+#rampage-track{width:120px;height:3px;background:#222;position:relative}
+#rampage-fill{height:100%;width:0%;background:var(--combo);transition:width 0.15s,background 0.3s}
+#rampage-fill.hot{background:var(--rampage);box-shadow:0 0 8px var(--rampage)}
+#rampage-count{font-size:0.56rem;color:var(--dim2);min-width:32px;text-align:right;transition:color 0.3s}
+#rampage-count.hot{color:var(--rampage)}
+
+#hud-right{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+#score{font-size:1.4rem;letter-spacing:0.1em;transition:transform 0.1s}
+#score.pop{animation:score-pop 0.18s ease}
+@keyframes score-pop{0%{transform:scale(1)}50%{transform:scale(1.18)}100%{transform:scale(1)}}
+#score-label{font-size:0.52rem;color:var(--dim2);letter-spacing:0.25em}
+#xp-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:2px;margin-top:4px;cursor:pointer}
+#xp-wrap:hover #xp-track{background:#333}
+#xp-top{display:flex;gap:8px;align-items:baseline}
+#xp-lv{font-family:'Bebas Neue',sans-serif;font-size:0.72rem;letter-spacing:0.15em;color:var(--dim)}
+#xp-tok{font-size:0.48rem;letter-spacing:0.12em;color:var(--dim2);white-space:nowrap}
+#xp-tok span{color:var(--combo)}
+#xp-track{width:80px;height:2px;background:#222;margin-top:1px}
+#xp-fill{height:100%;width:0%;background:#555;transition:width 0.5s,background 0.3s}
+#xp-fill.glow{background:var(--combo);box-shadow:0 0 5px var(--combo)}
+
+/* ── COMBO ROW ── */
+#combo-area{
+  width:100%;max-width:860px;padding:0 24px 4px;
+  display:flex;align-items:center;gap:10px;flex-shrink:0;min-height:22px;
+}
+#combo-text{font-size:0.68rem;letter-spacing:0.18em;color:var(--dim2);white-space:nowrap;transition:color 0.2s;min-width:80px}
+#combo-text.lit{color:var(--combo)}
+#combo-text.ramp{color:var(--rampage);animation:rpulse 0.5s ease infinite alternate}
+@keyframes rpulse{from{text-shadow:0 0 4px var(--rampage)}to{text-shadow:0 0 14px var(--rampage)}}
+#level-badge{font-size:0.56rem;color:var(--dim2);letter-spacing:0.18em;white-space:nowrap}
+#streak-label{font-size:0.56rem;color:var(--dim2);letter-spacing:0.13em;margin-left:auto;white-space:nowrap}
+#streak-label.hot{color:#44ffaa88}
+
+/* ── ARENA ── */
+#arena{
+  position:relative;width:100%;max-width:860px;
+  flex:1;overflow:hidden;
+  min-height:0; /* critical — lets flex:1 work in overflow:hidden parent */
+}
+#mid-line{
+  position:absolute;left:0;right:0;top:60%;
+  height:1px;background:#222;z-index:2;
+}
+#mid-line::before{
+  content:'— DANGER ——————————————————————————————————————— DANGER —';
+  position:absolute;top:-9px;left:50%;transform:translateX(-50%);
+  font-size:0.49rem;color:#222;letter-spacing:0.13em;white-space:nowrap;
+}
+
+/* ── WORDS ── */
+.word-el{
+  position:absolute;white-space:nowrap;z-index:3;
+  transform-origin:center center;font-size:1.05rem;letter-spacing:0.13em;
+}
+.word-el .matched{color:#444}
+.word-el .remaining{color:var(--fg)}
+.word-el.crossed .remaining{color:var(--danger)}
+.word-el.crossed .matched{color:#4d1414}
+.word-el.sp-clear{text-shadow:0 0 8px var(--sp-clear)}
+.word-el.sp-clear .remaining{color:var(--sp-clear)}
+.word-el.sp-clear .matched{color:#004455}
+.word-el.sp-bomb{text-shadow:0 0 8px var(--sp-bomb)}
+.word-el.sp-bomb .remaining{color:var(--sp-bomb)}
+.word-el.sp-bomb .matched{color:#440022}
+.word-el.priority-target .remaining{color:#ffe066}
+.word-el.priority-target{filter:drop-shadow(0 0 4px rgba(255,200,0,0.3))}
+.word-el.danger-zone .remaining{animation:dflic 0.35s ease infinite alternate}
+@keyframes dflic{from{color:var(--danger)}to{color:#ff8888}}
+.word-el.quake{animation:qk 0.17s ease}
+.word-el.quake-r{animation:qk-big 0.2s ease}
+@keyframes qk{0%{transform:translate(0,0)}20%{transform:translate(-2px,1px) rotate(-1.3deg)}50%{transform:translate(2px,-1px) rotate(1.1deg)}80%{transform:translate(-1px,2px)}100%{transform:translate(0,0)}}
+@keyframes qk-big{0%{transform:scale(1)}25%{transform:translate(-4px,2px) scale(1.05) rotate(-2.2deg)}60%{transform:translate(4px,-2px) scale(1.06) rotate(2deg)}100%{transform:scale(1)}}
+.word-el.exploding{animation:expl 0.42s ease forwards;pointer-events:none}
+.word-el.exploding-r{animation:expl-r 0.46s ease forwards;pointer-events:none}
+.word-el.exploding-life{animation:expl-life 0.46s ease forwards;pointer-events:none}
+.word-el.exploding-clear{animation:expl-clear 0.5s ease forwards;pointer-events:none}
+.word-el.exploding-bomb{animation:expl-bomb 0.5s ease forwards;pointer-events:none}
+@keyframes expl{0%{opacity:1;transform:scale(1);filter:brightness(1)}28%{opacity:1;transform:scale(1.4);filter:brightness(7) blur(1px)}62%{opacity:0.4;transform:scale(1.9);filter:brightness(3) blur(3px)}100%{opacity:0;transform:scale(2.3);filter:brightness(0) blur(7px)}}
+@keyframes expl-r{0%{opacity:1;filter:brightness(1)}22%{opacity:1;transform:scale(1.5);filter:brightness(9) sepia(1) saturate(6) hue-rotate(-20deg)}60%{opacity:0.5;transform:scale(2.3);filter:brightness(4) sepia(1) blur(2px)}100%{opacity:0;transform:scale(3.1);filter:brightness(0) blur(9px)}}
+@keyframes expl-life{0%{opacity:1}28%{opacity:1;transform:scale(1.5);filter:brightness(8) hue-rotate(120deg)}62%{opacity:0.4;transform:scale(2.2);filter:brightness(4) hue-rotate(130deg) blur(2px)}100%{opacity:0;transform:scale(3);filter:brightness(0) blur(8px)}}
+@keyframes expl-clear{0%{opacity:1;transform:scale(1);filter:brightness(1)}25%{opacity:1;transform:scale(1.5);filter:brightness(10) hue-rotate(200deg)}65%{opacity:0.4;transform:scale(2.4);filter:brightness(5) hue-rotate(220deg) blur(3px)}100%{opacity:0;transform:scale(3.5);filter:brightness(0) blur(10px)}}
+@keyframes expl-bomb{0%{opacity:1;transform:scale(1)}20%{opacity:1;transform:scale(1.6);filter:brightness(12) hue-rotate(-60deg)}55%{opacity:0.5;transform:scale(2.8);filter:brightness(6) blur(4px)}100%{opacity:0;transform:scale(4);filter:brightness(0) blur(12px)}}
+
+/* ── INPUT ── */
+#input-bar{
+  width:100%;max-width:860px;padding:10px 24px 14px;
+  display:flex;align-items:center;gap:13px;
+  flex-shrink:0;border-top:1px solid #1a1a1a;
+}
+#prompt{color:var(--dim2);font-size:1rem}
+#typed{
+  background:transparent;border:none;outline:none;
+  color:var(--fg);font-family:'Share Tech Mono',monospace;
+  font-size:1.05rem;letter-spacing:0.1em;flex:1;caret-color:var(--fg);
+}
+#typed.error{color:var(--danger);animation:shake-i 0.18s ease}
+@keyframes shake-i{0%,100%{transform:translateX(0)}33%{transform:translateX(-4px)}66%{transform:translateX(4px)}}
+
+/* ── OVERLAYS (all fixed, z-index < HUD's 101) ── */
+#danger-vignette{
+  position:fixed;inset:0;pointer-events:none;z-index:8;opacity:0;
+  background:radial-gradient(ellipse at center,transparent 55%,#ff000000 100%);
+}
+#danger-vignette.pulse{animation:vign-pulse 0.7s ease forwards}
+@keyframes vign-pulse{0%{opacity:0}30%{opacity:1;background:radial-gradient(ellipse at center,transparent 45%,#ff000055 100%)}100%{opacity:0}}
+#death-overlay{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;z-index:90}
+#death-overlay.dying{animation:death-drain 1.1s ease forwards}
+@keyframes death-drain{0%{opacity:0}40%{opacity:0.7}100%{opacity:0.95}}
+body.shake{animation:body-shake 0.25s ease}
+@keyframes body-shake{0%,100%{transform:translate(0,0)}20%{transform:translate(-4px,2px)}40%{transform:translate(4px,-2px)}60%{transform:translate(-3px,3px)}80%{transform:translate(3px,-1px)}}
+
+/* ── BANNERS ── */
+.big-banner{
+  position:fixed;top:50%;left:50%;
+  transform:translate(-50%,-50%) scale(0.6);
+  font-family:'Bebas Neue',sans-serif;font-size:clamp(2.5rem,7vw,5rem);
+  letter-spacing:0.22em;pointer-events:none;z-index:200;opacity:0;
+  white-space:nowrap;text-align:center;
+}
+.big-banner.show{animation:bnr 1.5s ease forwards}
+#rampage-banner{color:var(--rampage);text-shadow:0 0 22px var(--rampage),0 0 50px #ff330033}
+#life-banner{color:var(--life);text-shadow:0 0 18px var(--life);font-size:clamp(1.4rem,4vw,2.8rem);line-height:1.3}
+#special-banner{color:var(--sp-bomb);text-shadow:0 0 18px var(--sp-bomb)}
+#phase-banner{
+  position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  font-family:'Bebas Neue',sans-serif;pointer-events:none;z-index:210;opacity:0;text-align:center;line-height:1.1;
+}
+#phase-banner.show{animation:phase-in 2.2s ease forwards}
+#phase-name{font-size:clamp(1rem,3vw,2rem);letter-spacing:0.35em;color:#fff;opacity:0.4}
+#phase-title{font-size:clamp(3rem,8vw,6rem);letter-spacing:0.18em}
+@keyframes bnr{0%{opacity:0;transform:translate(-50%,-50%) scale(0.5)}16%{opacity:1;transform:translate(-50%,-50%) scale(1.07)}36%{transform:translate(-50%,-50%) scale(0.97)}55%{opacity:1;transform:translate(-50%,-50%) scale(1)}82%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(1.06)}}
+@keyframes phase-in{0%{opacity:0;transform:translate(-50%,-50%) scale(0.7)}15%{opacity:1;transform:translate(-50%,-50%) scale(1.04)}35%{opacity:1;transform:translate(-50%,-50%) scale(0.99)}65%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(1.08)}}
+
+/* ── TOASTS ── */
+#ach-toast{
+  position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(18px);
+  background:#0d0d0d;border:1px solid #aa88ff33;padding:11px 20px;
+  font-size:0.7rem;letter-spacing:0.17em;color:var(--ach);
+  pointer-events:none;z-index:180;opacity:0;max-width:320px;text-align:center;line-height:1.8;
+}
+#ach-toast.show{animation:tin 3.4s ease forwards}
+@keyframes tin{0%{opacity:0;transform:translateX(-50%) translateY(18px)}10%{opacity:1;transform:translateX(-50%) translateY(0)}80%{opacity:1}100%{opacity:0;transform:translateX(-50%) translateY(-8px)}}
+#levelup-toast{
+  position:fixed;top:30%;left:50%;transform:translateX(-50%);
+  background:#111;border:1px solid #ffcc0044;padding:10px 20px;
+  font-family:'Bebas Neue',sans-serif;font-size:1.2rem;letter-spacing:0.25em;
+  color:var(--combo);pointer-events:none;z-index:310;opacity:0;white-space:nowrap;text-align:center;line-height:1.5;
+}
+#levelup-toast.show{animation:lup 2.8s ease forwards}
+@keyframes lup{0%{opacity:0;transform:translateX(-50%) scale(0.9)}12%{opacity:1;transform:translateX(-50%) scale(1)}75%{opacity:1}100%{opacity:0;transform:translateX(-50%) scale(1.05)}}
+
+/* ── BONUS / SPEED POPUPS ── */
+.bonus-popup{
+  position:fixed;pointer-events:none;z-index:155;
+  font-family:'Bebas Neue',sans-serif;font-size:1.15rem;letter-spacing:0.14em;
+  animation:pfl 0.95s ease forwards;white-space:nowrap;
+}
+@keyframes pfl{0%{opacity:1;transform:translateY(0) scale(1)}55%{opacity:1;transform:translateY(-32px) scale(1.06)}100%{opacity:0;transform:translateY(-60px) scale(0.86)}}
+.speed-grade{
+  position:fixed;top:25%;left:50%;transform:translateX(-50%);
+  font-family:'Bebas Neue',sans-serif;font-size:clamp(2rem,5vw,4rem);
+  letter-spacing:0.3em;pointer-events:none;z-index:160;
+  animation:sgrade 1.1s ease forwards;white-space:nowrap;
+}
+@keyframes sgrade{0%{opacity:0;transform:translateX(-50%) scale(0.7) translateY(20px)}20%{opacity:1;transform:translateX(-50%) scale(1.05) translateY(0)}70%{opacity:1;transform:translateX(-50%) scale(1)}100%{opacity:0;transform:translateX(-50%) scale(0.95) translateY(-20px)}}
+#xp-popup-wrap{
+  position:fixed;bottom:20px;right:20px;
+  pointer-events:none;z-index:155;
+  display:flex;flex-direction:column;gap:3px;align-items:flex-end;
+}
+.xp-popup{font-family:'Bebas Neue',sans-serif;font-size:0.85rem;letter-spacing:0.15em;color:var(--dim2);animation:xpfl 1.4s ease forwards;white-space:nowrap}
+@keyframes xpfl{0%{opacity:0.9}60%{opacity:0.9;transform:translateY(-18px)}100%{opacity:0;transform:translateY(-32px)}}
+
+/* ── SCREENS ── */
+/* Screens sit on top of arena but HUD/input are z-index:101 so they show through */
+.screen{
+  display:none;position:fixed;inset:0;
+  background:var(--bg);flex-direction:column;align-items:center;justify-content:center;
+  z-index:100;gap:14px;
+}
+.screen.active{display:flex}
+#hud,#combo-area,#input-bar{position:relative;z-index:101}
+
+.screen h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(2.8rem,8vw,5rem);letter-spacing:0.2em;text-align:center}
+.screen p{color:var(--dim);font-size:0.72rem;letter-spacing:0.18em;text-align:center;line-height:2.5}
+.btn{
+  padding:10px 34px;background:var(--fg);color:var(--bg);
+  font-family:'Share Tech Mono',monospace;font-size:0.78rem;letter-spacing:0.2em;
+  border:none;cursor:pointer;transition:opacity 0.15s,transform 0.1s;
+}
+.btn:hover{opacity:0.82;transform:scale(1.03)}
+.btn.ghost{background:transparent;color:#aaa;border:1px solid #444}
+.btn.ghost:hover{color:var(--fg);border-color:#888;opacity:1}
+.btn.danger-btn{background:transparent;color:#aa4444;border:1px solid #663333;font-size:0.68rem}
+.btn.danger-btn:hover{color:var(--danger);border-color:var(--danger);opacity:1}
+
+/* GAME OVER */
+#final-score{font-size:2.2rem;letter-spacing:0.15em}
+#final-sub{font-size:0.62rem;color:var(--dim);letter-spacing:0.17em;text-align:center;line-height:2.2}
+#xp-reveal{display:flex;flex-direction:column;gap:4px;align-items:center;min-height:36px}
+.xp-line{font-size:0.62rem;letter-spacing:0.18em;color:var(--dim2);opacity:0;animation:xp-reveal-in 0.4s ease forwards}
+@keyframes xp-reveal-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.xp-line.total{color:var(--combo);font-size:0.72rem}
+#name-entry{display:flex;flex-direction:column;align-items:center;gap:7px;margin-top:4px}
+#name-label{font-size:0.6rem;color:var(--dim);letter-spacing:0.25em}
+#name-input{
+  background:transparent;border:none;border-bottom:1px solid #555;outline:none;
+  color:var(--fg);font-family:'Share Tech Mono',monospace;
+  font-size:1.25rem;letter-spacing:0.3em;text-align:center;width:200px;padding-bottom:3px;
+}
+#name-input::placeholder{color:#444}
+#over-btns{display:flex;gap:10px;margin-top:2px}
+
+/* LEADERBOARD */
+#lb-table{width:500px;max-width:93vw;border-collapse:collapse}
+#lb-table thead tr{border-bottom:1px solid #333}
+#lb-table th{font-size:0.52rem;letter-spacing:0.2em;color:var(--dim2);padding:5px 10px;text-align:left;font-weight:normal}
+#lb-table th:not(:first-child){text-align:right}
+#lb-table td{padding:7px 10px;font-size:0.84rem;letter-spacing:0.06em;border-bottom:1px solid #1a1a1a}
+#lb-table td:not(:first-child){text-align:right;color:var(--dim)}
+#lb-table tr.highlight td{color:var(--fg)!important}
+.rank-num{color:var(--dim2);font-size:0.66rem;margin-right:8px}
+.r1 .rank-num{color:#fff}.r2 .rank-num{color:#aaa}.r3 .rank-num{color:#777}
+#lb-btns{display:flex;gap:10px;margin-top:10px}
+
+/* PROFILE */
+#profile-screen{gap:12px}
+#profile-list{display:flex;flex-direction:column;gap:5px;width:270px;max-height:260px;overflow-y:auto}
+.profile-row{display:flex;align-items:center;justify-content:space-between;padding:8px 13px;border:1px solid #333;cursor:pointer;transition:border-color 0.15s}
+.profile-row:hover{border-color:#666}
+.profile-row.active-profile{border-color:#888}
+.profile-name{font-size:0.86rem;letter-spacing:0.12em}
+.profile-ach-count{font-size:0.58rem;color:var(--dim2);letter-spacing:0.14em}
+#new-profile-row{display:flex;gap:8px;align-items:center}
+#new-profile-input{
+  background:transparent;border:none;border-bottom:1px solid #444;outline:none;
+  color:var(--fg);font-family:'Share Tech Mono',monospace;
+  font-size:0.92rem;letter-spacing:0.14em;width:155px;padding-bottom:3px;
+}
+#new-profile-input::placeholder{color:#555}
+#profile-btns{display:flex;gap:10px;margin-top:3px}
+
+/* ACHIEVEMENTS */
+#ach-screen{gap:9px;padding:18px 0}
+#ach-screen h1{flex-shrink:0}
+#ach-profile-name{font-size:0.62rem;letter-spacing:0.24em;color:var(--dim);margin-top:-7px}
+#ach-progress{font-size:0.58rem;color:var(--dim);letter-spacing:0.17em;flex-shrink:0}
+#ach-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;width:680px;max-width:95vw;max-height:54vh;overflow-y:auto;padding:2px}
+.ach-card{padding:11px 9px;border:1px solid #2a2a2a;display:flex;flex-direction:column;gap:5px;transition:border-color 0.2s}
+.ach-card.unlocked{border-color:#aa88ff44}
+.ach-card.unlocked .ach-icon{filter:none;opacity:1}
+.ach-card.unlocked .ach-name{color:var(--ach)}
+.ach-icon{font-size:1.35rem;opacity:0.2;filter:grayscale(1);transition:all 0.3s;line-height:1}
+.ach-name{font-size:0.63rem;letter-spacing:0.14em;color:var(--dim2);line-height:1.4}
+.ach-desc{font-size:0.52rem;letter-spacing:0.09em;color:#555;line-height:1.5}
+.ach-date{font-size:0.48rem;color:var(--dim);letter-spacing:0.1em;margin-top:2px}
+#ach-btns{display:flex;gap:10px;flex-shrink:0}
+
+/* JUKEBOX */
+#jukebox-screen{gap:12px;padding:16px 0}
+#jukebox-screen h1{flex-shrink:0;font-size:clamp(2.2rem,6vw,4rem)}
+#jb-meta{display:flex;align-items:center;gap:18px;flex-shrink:0}
+#jb-meta span{font-size:0.6rem;letter-spacing:0.2em;color:var(--dim)}
+#jb-tokens{color:var(--combo)}
+#track-grid{display:flex;flex-direction:column;gap:6px;width:580px;max-width:92vw;max-height:52vh;overflow-y:auto;padding:2px}
+.track-row{display:grid;grid-template-columns:28px 1fr auto auto;align-items:center;gap:10px;padding:9px 12px;border:1px solid #2a2a2a;transition:border-color 0.15s}
+.track-row.slot-empty{border-style:dashed;cursor:pointer}
+.track-row.slot-empty:hover,.track-row.slot-filled:hover{border-color:#555}
+.track-row.slot-locked{opacity:0.5;cursor:not-allowed;border-color:#1a1a1a}
+.track-row.now-playing{border-color:#888}
+.track-num{font-size:0.7rem;color:var(--dim2);letter-spacing:0.1em;text-align:center;font-family:'Bebas Neue',sans-serif}
+.track-row.now-playing .track-num{color:var(--combo)}
+.track-name{font-size:0.72rem;letter-spacing:0.1em;color:#bbb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.track-row.slot-empty .track-name{color:var(--dim2);font-size:0.62rem}
+.track-row.now-playing .track-name{color:#fff}
+.track-row.slot-locked .track-name{color:var(--dim2);font-size:0.62rem}
+.track-badge{font-size:0.52rem;letter-spacing:0.12em;padding:2px 7px;border:1px solid #333;color:var(--dim2);white-space:nowrap;flex-shrink:0}
+.track-badge.playing{border-color:#aaa;color:#ddd}
+.track-badge.locked-cost{border-color:#ffcc0055;color:#ffcc0099}
+.track-actions{display:flex;gap:5px;flex-shrink:0}
+.track-btn{background:transparent;border:1px solid #333;color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:0.52rem;letter-spacing:0.12em;padding:3px 7px;cursor:pointer;transition:color 0.15s,border-color 0.15s;white-space:nowrap}
+.track-btn:hover{color:#ddd;border-color:#777}
+.track-btn.primary{border-color:#555;color:#ccc}
+.track-btn.primary:hover{color:#fff;border-color:#ccc}
+.track-btn.del{color:#aa4444;border-color:#553333}
+.track-btn.del:hover{color:var(--danger);border-color:var(--danger)}
+.track-btn:disabled{opacity:0.3;cursor:not-allowed}
+#jb-hint{font-size:0.58rem;color:var(--dim2);letter-spacing:0.18em;flex-shrink:0;text-align:center}
+#jb-btns{display:flex;gap:10px;flex-shrink:0}
+
+/* particles */
+#particles{position:fixed;inset:0;pointer-events:none;z-index:10}
+</style>
+</head>
+<body>
+
+<!-- fixed overlays -->
+<canvas id="particles"></canvas>
+<div id="danger-vignette"></div>
+<div id="death-overlay"></div>
+<div id="phase-banner"><div id="phase-name"></div><div id="phase-title"></div></div>
+<div id="rampage-banner" class="big-banner">RAMPAGE!</div>
+<div id="life-banner"    class="big-banner"></div>
+<div id="special-banner" class="big-banner"></div>
+<div id="ach-toast"></div>
+<div id="levelup-toast"></div>
+<div id="xp-popup-wrap"></div>
+
+<!-- ══ SCREENS (z-index 100) ══ -->
+
+<div id="profile-screen" class="screen active">
+  <h1>WORD RAIN</h1>
+  <p>SELECT YOUR PROFILE</p>
+  <div id="profile-list"></div>
+  <div id="new-profile-row">
+    <input id="new-profile-input" maxlength="14" placeholder="NEW PLAYER NAME" spellcheck="false" autocomplete="off"/>
+    <button class="btn" id="create-profile-btn">+</button>
+  </div>
+  <div id="profile-btns">
+    <button class="btn" id="profile-play-btn">PLAY</button>
+    <button class="btn ghost" id="profile-ach-btn">ACHIEVEMENTS</button>
+  </div>
+  <button class="btn danger-btn" id="profile-wipe-btn">WIPE PROFILE DATA</button>
+</div>
+
+<div id="start-screen" class="screen">
+  <h1>WORD RAIN</h1>
+  <p id="start-profile-line">PLAYING AS —</p>
+  <p>3=2pts · 4=3pts · 5=8pts · 6=10pts · 7-8=12pts · 9+=15pts<br>
+    <span style="color:var(--sp-clear)">CYAN</span> = CLEAR ALL &nbsp;·&nbsp; <span style="color:var(--sp-bomb)">PINK</span> = BONUS KILL<br>
+    50 FLAWLESS CHARS → RAMPAGE ×2 &nbsp;·&nbsp; 50 WORDS CLEAN → +1 LIFE</p>
+  <div style="display:flex;gap:10px">
+    <button class="btn" id="start-btn">START TYPING</button>
+    <button class="btn ghost" id="lb-btn-home">LEADERBOARD</button>
+  </div>
+  <div style="display:flex;gap:10px">
+    <button class="btn ghost" id="ach-btn-home">ACHIEVEMENTS</button>
+    <button class="btn ghost" id="jukebox-btn-home">JUKEBOX</button>
+    <button class="btn ghost" id="switch-profile-btn">SWITCH PROFILE</button>
+  </div>
+</div>
+
+<div id="over-screen" class="screen">
+  <h1>GAME<br>OVER</h1>
+  <div id="final-score">0</div>
+  <div id="final-sub"></div>
+  <div id="xp-reveal"></div>
+  <div id="name-entry">
+    <div id="name-label">SAVE SCORE AS</div>
+    <input id="name-input" maxlength="12" placeholder="PLAYER" spellcheck="false" autocomplete="off"/>
+  </div>
+  <div id="over-btns">
+    <button class="btn" id="save-btn">SAVE SCORE</button>
+    <button class="btn ghost" id="skip-btn">SKIP</button>
+  </div>
+</div>
+
+<div id="leaderboard-screen" class="screen">
+  <h1>TOP TEN</h1>
+  <table id="lb-table">
+    <thead><tr><th>#&nbsp; NAME</th><th>WORDS</th><th>COMBO</th><th>STREAK</th><th>DATE</th><th>SCORE</th></tr></thead>
+    <tbody id="lb-body"></tbody>
+  </table>
+  <div id="lb-btns">
+    <button class="btn" id="play-btn-lb">PLAY AGAIN</button>
+    <button class="btn ghost" id="home-btn-lb">HOME</button>
+  </div>
+</div>
+
+<div id="ach-screen" class="screen">
+  <h1>ACHIEVEMENTS</h1>
+  <div id="ach-profile-name"></div>
+  <div id="ach-progress"></div>
+  <div id="ach-grid"></div>
+  <div id="ach-btns"><button class="btn ghost" id="ach-back-btn">BACK</button></div>
+</div>
+
+<div id="jukebox-screen" class="screen">
+  <h1>JUKEBOX</h1>
+  <div id="jb-meta">
+    <span id="jb-profile-name"></span>
+    <span id="jb-xp-info"></span>
+    <span id="jb-tokens" class="jb-tokens"></span>
+  </div>
+  <div id="track-grid"></div>
+  <div id="jb-hint">CLICK AN EMPTY SLOT OR DRAG A FILE TO LOAD · UP TO 10 TRACKS</div>
+  <div id="jb-btns"><button class="btn ghost" id="jb-back-btn">BACK</button></div>
+  <input type="file" id="jb-file" accept="audio/*" style="display:none"/>
+</div>
+
+<!-- ══ GAME UI (z-index 101, always on top) ══ -->
+
+<div id="hud">
+  <div id="hud-left">
+    <div id="title">WORD RAIN</div>
+    <div id="lives"></div>
+  </div>
+  <div id="hud-mid">
+    <div id="rampage-bar-wrap">
+      <span id="rampage-label">RAMPAGE</span>
+      <div id="rampage-track"><div id="rampage-fill"></div></div>
+      <span id="rampage-count">0/50</span>
+    </div>
+  </div>
+  <div id="hud-right">
+    <div id="score">0</div>
+    <div id="score-label">SCORE</div>
+    <div id="xp-wrap" onclick="openJukebox(startScr)" title="Open Jukebox">
+      <div id="xp-top">
+        <span id="xp-lv">LVL 1</span>
+        <span id="xp-tok">🎵 <span id="token-count">0</span>T</span>
+      </div>
+      <div id="xp-track"><div id="xp-fill"></div></div>
+    </div>
+  </div>
+</div>
+
+<div id="combo-area">
+  <div id="combo-text">COMBO</div>
+  <div id="level-badge">LVL 1</div>
+  <div id="streak-label" style="margin-left:auto">STREAK 0/50</div>
+</div>
+
+<div id="arena">
+  <div id="mid-line"></div>
+</div>
+
+<div id="input-bar">
+  <span id="prompt">&gt;</span>
+  <input id="typed" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="start typing..."/>
+</div>
+
+<script>
+'use strict';
+// ═══════════════════════════════════════════
+//  DOM REFS (all declared once, up top)
+// ═══════════════════════════════════════════
+const arena        =document.getElementById('arena');
+const typedEl      =document.getElementById('typed');
+const scoreEl      =document.getElementById('score');
+const livesEl      =document.getElementById('lives');
+const comboText    =document.getElementById('combo-text');
+const streakLabel  =document.getElementById('streak-label');
+const lvBadge      =document.getElementById('level-badge');
+const rampFill     =document.getElementById('rampage-fill');
+const rampCount    =document.getElementById('rampage-count');
+const rampLabel    =document.getElementById('rampage-label');
+const rampBanner   =document.getElementById('rampage-banner');
+const lifeBanner   =document.getElementById('life-banner');
+const spBanner     =document.getElementById('special-banner');
+const phaseBanner  =document.getElementById('phase-banner');
+const phaseNameEl  =document.getElementById('phase-name');
+const phaseTitleEl =document.getElementById('phase-title');
+const achToast     =document.getElementById('ach-toast');
+const dangerVig    =document.getElementById('danger-vignette');
+const deathOverlay =document.getElementById('death-overlay');
+const xpReveal     =document.getElementById('xp-reveal');
+const startScr     =document.getElementById('start-screen');
+const overScr      =document.getElementById('over-screen');
+const lbScr        =document.getElementById('leaderboard-screen');
+const achScr       =document.getElementById('ach-screen');
+const profileScr   =document.getElementById('profile-screen');
+const jukeboxScr   =document.getElementById('jukebox-screen');
+const lbBody       =document.getElementById('lb-body');
+const achGrid      =document.getElementById('ach-grid');
+const profileList  =document.getElementById('profile-list');
+const finalSc      =document.getElementById('final-score');
+const finalSub     =document.getElementById('final-sub');
+const nameInput    =document.getElementById('name-input');
+// ═══════════════════════════════════════════
+//  WORD TIERS
+// ═══════════════════════════════════════════
+const TIERS=[
+  "run hit fly key tap cut win top red map bug dot gun cat dog box sun hat log pin net cup bed lip fog raw zip jam hex nod ark axe bay bit bud dam dip dye ear egg fan fit fix fur gap gel gem gut hop hub hug hut ice imp ink ion jar jaw jet jug keg kit lab lag lap led leg lid lit lot low mud mug nab nag nil nip nun oak odd off opt orb ore owl pad pan pat paw peg pen pie pit pod pop pot pro pub pun put rag ram ran rap rat ray ref rep rib rid rig rim rip rob rod rot row rub rug rum rut rye sag sap sat saw say sea set sew shy sip sir sit ski sky sly sob son spa spy sue sum tab tag tan tar tax tea ten tic tie tin tip toe ton toy try tub tug two van vat via vow wad wag war wax web wed wee wet wig wit woe yak yam yap yew zip".split(' '),
+  "rain type fast word fall code dark void rush blur snap lock drop sink flow cold neon grid hack scan zone text beam loop bind zero flip cast dash glow bang bolt claw dusk echo fang fury gust howl iris burn cage clan coil cord core crow cuff curl dare daze dead debt deck deep dive doom down drag draw drip dual dull dump dust earn edge epic even evil exam exit face fact fade fail fame fare farm fate feed feel feet fill film find fire firm fish fist flag flat flaw flex foil fond fool fork form fort four fowl free fuel full fume fund fuse gain gate gaze gear germ give glad gone gore grab gram gray grew grim grin grip grit grow gulf half hall halt hand hang hard haze head heal heap heat heel held help here hero hide high hill hint hire hold hole home hood hook hope horn hose host hour hull hung hunt hurl icon idle inch iron item jack jade jail jest join jolt jump just keen kept kill kind king knew know lace lack lake lamb lamp land lane lash last late lava lawn lead lean leap lend lens lest lift like lime limp line link lion lore lose lost loud love luck lure lurk made mail main make male mark mash mass mast mate mean meet melt mesh mild mile milk mind mine mint miss mist moat mode moon more most move much mull must myth nail name near neck need next nick nine none noon norm nose note once only open oral over pack page pain pair palm park pass past path pave peak peel peer pest pick pile plan play plot plow plug poem poke pole poll pool port pose post pour pray prey prod prop pull pump pure push race rack rail rake ramp rank rant rash rate read real reap reel rein rely rent rest ride ring riot rise risk road roam roar role roll roof rope rose rout rove ruin rule rust sail sake sale salt sand sane scar seal seam sear seed seek seem seep send shed ship shoe shun side sigh silk site size skin slam slap slay slim slip slit slot slow snap snow soak soar soft soil sole some song soot sort soul span spar spin spit spot spur stab star stay stem step stew stir stop stun suit sulk surf swan swap sway tail tale tall tank tame task team tear tell term test than that them then they thin this tide tier tile till time tire toad toil toll tomb tone tore torn tour town trap tray trek trim trip trot true tuck tune turf turn tusk twin ugly undo unit upon urge used vale veil vein vent verb vest view vine void vote wade wage wake walk wall wane ward warm warn warp wash wave weak wear weed week weld well went were west whim whip wide wife wild will wink wire wise wish wolf wood wore work worm worn wrap wren yard year yell your zero".split(' '),
+  "pixel laser night ghost speed sharp storm chain block spike shift crash flash break level score quick enter blaze blink brave clash craft crawl decoy drift drone elite ember feral flare forge frenzy frost glare grasp gravel abuse acute adapt alarm alert align alive allow alter amber amend amuse angel annex armor array aside asset audio avoid awake aware awful begin below bench blade bland blank bleed blend bless blind bliss blood blown blunt bound boxer brace braid brand brash brawl bread breed bride brief brine brink brisk brood brook brush brute build built bulge burst cable carry catch cause cease chalk champ chaos chart chase cheap cheat cheek cheer child chill choir chord civic civil claim clamp clang clean clear clerk click cliff cling clone close cloud clump coast cobra comet comic couch cough count court cover crack crane crawl crazy creek crime cross crowd cruel crumb crush crypt curve cyber cycle dance death debug delay delta dense depot depth drink drive eager earth eight elect email empty enemy enjoy enter envoy equal erase error every exact exist exile expel extra faint false fancy fatal fault feast fence fetch fever field fifth fifty fight final fixed flame flesh float flood floor fresh front gamma gauze giant gland glide gloom gloss glove golem grace grade grand graph grass great green grief grind grove growl guard guide guild gulch haunt haven heart heavy helix horde horse hotel hover human humid hurry image imply inner input issue joust judge juice jumpy lance large laser latch later laugh layer leech legal lemon light limit liner lingo locus lodge logic loose lower loyal lucid lunar lunch lyric magic major manor march marsh match mercy merge metal micro might mimic minor minus mixed model money month moody moral mount mouse mouth muddy murky naive nerve noble noise north novel nudge nurse nymph occur other ounce outdo ozone panic panel paper party pause peace pedal penny perch phase phone photo pinch pitch place plain plane plant plate plaza plead pluck plume point poker polar power press price pride prime prize probe proof prose proud prowl prune pulse purge quack queen quest query quote radar radio rapid ratio reach ready realm rebel repay reset ridge rifle rigid risky river robot rocky rogue rough round royal rumor saint scale scene scent scout screw seize sense serve shard sheer shelf shell sight since skunk slang slice slick slime smoke snare sneak snipe solar solid solve sonic sorry south space spawn speak spell spend spill sport squad stack staff stage stain stale stand stark start state steel steep steer stern stick stiff still stock stomp store stout strap stray strip stunt sword swear swipe swirl swoop taunt teeth tense thick think three throw tiger tight tired titan token torch total touch tough toxic trace track trade trail train trait trend trick troop truce truly trust truth tumor turbo twirl ultra unify until upper upset usher utter valor vaunt venom verse video vigor viral visor visit vista vital vocal vogue voice waltz watch water weary weave wedge weird whale wheat wheel wield windy wired witch woman world worse worth wrath wrist write wrong youth".split(' '),
+  "terminal cascade reflex impact glitch signal syntax binary matrix cursor command destroy voltage circuit phantom quantum reactor overload execute keyboard blizzard bullseye chaotic compress conduct deflect diagnose disrupt encrypt enhance abandon abolish absence acclaim account achieve acquire actions adopted adverse against aligned alleged altered ancient anarchy anxiety applied assault attempt balance barrier battery believe beneath biology bizarre blanket blaster bolster brittle broaden cabinet calling capture carnage carrier cavalry chamber channel chapter charity clarity cluster coastal combat compact compete complex concept concern console corrupt culture current customs dataset debacle decimal declare decline default deficit deliver digital disable discord disease dismiss display dispose distant distort disturb divided durable dynamic enlarge epitome evasion exclude exhaust extreme failure fantasy fashion feature federal fervent fiction fighter finance focused foreign forward freedom genuine geology harmful harvest heading hostile however illegal immense impulse improve include inferno inspect inspire intense isolate justice kingdom kinetic knuckle lacking lattice leaving liberal liberty limited lineage machine marshal maximum measure medical mention message minimum miracle mixture monitor monster network nothing nucleus obscure offense opinion orbital organic outcome outlook painful passive pattern penalty perhaps persona physics picture primary private process product program project protect quantum reality receive reflect refused release remains replace reports request restore results segment serious service setting shelter similar society soldier specify staging strange stretch stagger student subject succeed suggest support surface survive suspend tactics tangent therapy thought through thunder tonight torpedo torture totally transit trouble undying uniform upgrade various venture version vibrate visible warrior warrant weapons whether without".split(' '),
+  "breakdown cataclysm crossfire darkforce deadlight detonator discharge eliminate endurance explosion frequency hurricane ignition intercept labyrinth magnitude malignant mastermind nightmare overthrow overwrite perpetual quickstrike rampaging resonance scattered shockwave slaughter smoldering supersonic terminate threshold thundering turbulence unbreakable vengeance wavelength xenomorph abnormally accelerate accessible accomplish accumulate aggression allegiance antagonist arithmetic atmosphere attachment attainable barricades brilliance calculated capability cataclysmic characters checkpoint chronology combatants competitor concession conditions conspiracy contention continuum corrupting deficiency demolition deployment determined devastation difference difficulty dimensions discipline dismantle domination eliminated engagement enterprise especially estimation exaltation exhausting experience experiment extinction fabricated ferocious formations foundation frequencies generation harassment imbalance individual inevitable influenced initiative innovation insidious integrated intensity invincible irrelevant liberation limitation mainframe malevolent mechanical metabolism militarize monitoring mysterious negligence neutralize objectified operations oppression overlapping paradoxical penetration perfection persecution persistent phenomenon possession predicament procedural programmed projection propaganda recognition redirection regulations replication resistance rightfully saturation simulation specialization submission subsequent suppressed systematic threatened trajectory traversable unrelenting unstoppable vaporize venomous victorious warlord xenophobia zealotry".split(' ')
+];
+
+// ═══════════════════════════════════════════
+//  ACHIEVEMENTS
+// ═══════════════════════════════════════════
+const ACH=[
+  {id:'cent',      icon:'💯', name:'CENTURION',      desc:'Score 100 pts in one game'},
+  {id:'kilo',      icon:'💰', name:'MILLIONAIRE',    desc:'Score 1,000 pts in one game'},
+  {id:'five_k',    icon:'👑', name:'LEGEND',         desc:'Score 5,000 pts in one game'},
+  {id:'ten_k',     icon:'⚡', name:'IMMORTAL',       desc:'Score 10,000 pts in one game'},
+  {id:'twenty_k',  icon:'🌌', name:'TRANSCENDENCE',  desc:'Score 20,000 pts in one game'},
+  {id:'w50',       icon:'📖', name:'WORDSMITH',      desc:'Clear 50 words in one game'},
+  {id:'w200',      icon:'📚', name:'LEXICON',        desc:'Clear 200 words in one game'},
+  {id:'w500',      icon:'🏛️', name:'ENCYCLOPAEDIA', desc:'Clear 500 words in one game'},
+  {id:'c10',       icon:'🔥', name:'ON FIRE',        desc:'Reach 10× combo'},
+  {id:'c25',       icon:'🌋', name:'VOLCANIC',       desc:'Reach 25× combo'},
+  {id:'c50',       icon:'☄️', name:'CATACLYSM',     desc:'Reach 50× combo'},
+  {id:'c100',      icon:'🌀', name:'SINGULARITY',    desc:'Reach 100× combo'},
+  {id:'ramp1',     icon:'💥', name:'UNLEASHED',      desc:'Trigger RAMPAGE (50 chars flawless)'},
+  {id:'ramp5',     icon:'🔴', name:'RAGE MACHINE',   desc:'Trigger RAMPAGE in 5 separate games'},
+  {id:'ramp_20',   icon:'🌪️', name:'HURRICANE',     desc:'Sustain RAMPAGE for 20+ clears'},
+  {id:'str50',     icon:'🌿', name:'IRON WILL',      desc:'50 words without a single error'},
+  {id:'str100',    icon:'🏅', name:'FLAWLESS',       desc:'100 consecutive words no error'},
+  {id:'str200',    icon:'🌟', name:'GHOST',          desc:'200 consecutive words no error'},
+  {id:'life3',     icon:'💚', name:'PHOENIX',        desc:'Earn 3 extra lives in one game'},
+  {id:'spd_fast',  icon:'⚡', name:'LIGHTNING',      desc:'Clear a word in under 0.8s of appearing'},
+  {id:'spd_cross', icon:'🎯', name:'LAST BREATH',    desc:'Clear 10 crossed words in one game'},
+  {id:'spd_5fast', icon:'🏎️', name:'TURBO',         desc:'Clear 5 words under 1.5s each'},
+  {id:'b1',        icon:'🗡️', name:'WORDSLAYER',    desc:'Clear a 9+ letter word'},
+  {id:'b10',       icon:'⚔️', name:'EXECUTIONER',   desc:'Clear 10 brutal words in one game'},
+  {id:'b50',       icon:'🏴', name:'WARLORD',        desc:'Clear 50 brutal words in one game'},
+  {id:'sp_clear1', icon:'💎', name:'SWEEPER',        desc:'Trigger a CLEAR ALL special word'},
+  {id:'sp_bomb1',  icon:'💣', name:'DEMOLITION',     desc:'Trigger a BONUS KILL special word'},
+  {id:'sp_both',   icon:'🎆', name:'ARSENAL',        desc:'Trigger both special types in one game'},
+  {id:'lv10',      icon:'🚀', name:'ACCELERATOR',    desc:'Reach level 10'},
+  {id:'lv20',      icon:'🌀', name:'VORTEX',         desc:'Reach level 20'},
+  {id:'lv30',      icon:'🕳️', name:'ABYSS',         desc:'Reach level 30'},
+  {id:'clean',     icon:'🔲', name:'PRISTINE',       desc:'Finish a game with zero typos'},
+  {id:'g10',       icon:'🎮', name:'DEDICATED',      desc:'Play 10 total games'},
+  {id:'g50',       icon:'🏆', name:'VETERAN',        desc:'Play 50 total games'},
+  {id:'top1',      icon:'🥇', name:'#1',             desc:'Hold the #1 leaderboard spot'},
+];
+
+// ═══════════════════════════════════════════
+//  STORAGE
+// ═══════════════════════════════════════════
+const KPROF='wr_profs_v3',KACT='wr_act_v3',KLB='wr_lb_v3',KSLOTS='wr_slots_v2',KBEST='wr_best_v1';
+const gp=()=>{try{return JSON.parse(localStorage.getItem(KPROF))||[]}catch{return[]}};
+const sp=p=>localStorage.setItem(KPROF,JSON.stringify(p));
+const getActive=()=>{const a=localStorage.getItem(KACT);return gp().find(p=>p.name===a)||null};
+const setActive=n=>localStorage.setItem(KACT,n);
+const getProf=n=>gp().find(p=>p.name===n)||null;
+function saveProf(prof){const ps=gp(),i=ps.findIndex(p=>p.name===prof.name);if(i>=0)ps[i]=prof;else ps.push(prof);sp(ps)}
+function createProf(name){
+  const n=name.trim().toUpperCase().slice(0,14);
+  if(!n||getProf(n))return null;
+  const p={name:n,achIds:[],achDates:{},xp:{level:1,current:0,tokens:0,spent:0},stats:{games:0,rampageGames:0}};
+  saveProf(p);return p;
+}
+function wipeProf(name){
+  sp(gp().filter(p=>p.name!==name));
+  try{const s=JSON.parse(localStorage.getItem(KSLOTS))||{};delete s[name];localStorage.setItem(KSLOTS,JSON.stringify(s))}catch{}
+  saveLB(loadLB().filter(e=>e.name!==name));
+}
+function unlockAch(pname,id){
+  const p=getProf(pname);if(!p||p.achIds.includes(id))return false;
+  p.achIds.push(id);p.achDates[id]=new Date().toLocaleDateString();saveProf(p);return true;
+}
+const loadLB=()=>{try{return JSON.parse(localStorage.getItem(KLB))||[]}catch{return[]}};
+const saveLB=b=>localStorage.setItem(KLB,JSON.stringify(b));
+function addLBEntry(name,score,words,combo,streak){
+  const b=loadLB();
+  b.push({name:(name.trim().toUpperCase()||'PLAYER').slice(0,12),score,words,combo,streak,date:new Date().toLocaleDateString()});
+  b.sort((a,c)=>c.score-a.score);saveLB(b.slice(0,10));
+}
+const getBest=()=>{try{return parseInt(localStorage.getItem(KBEST))||0}catch{return 0}};
+const setBest=s=>localStorage.setItem(KBEST,String(s));
+
+// ═══════════════════════════════════════════
+//  XP SYSTEM
+// ═══════════════════════════════════════════
+const XP_PER_LEVEL=lv=>100+lv*60;
+const SLOT_COSTS=[0,0,1,1,2,2,3,3,4,5];
+
+function profXP(p){return p.xp||{level:1,current:0,tokens:0,spent:0}}
+function awardXP(pname,amount){
+  if(!amount||amount<=0)return;
+  const p=getProf(pname);if(!p)return;
+  const xp=profXP(p);xp.current+=amount;
+  while(xp.current>=XP_PER_LEVEL(xp.level)){
+    xp.current-=XP_PER_LEVEL(xp.level);xp.level++;xp.tokens++;
+    showLevelUpToast(xp.level,xp.tokens-(xp.spent||0));
+    sfx('achievement');
+  }
+  p.xp=xp;saveProf(p);renderXPBar();
+}
+function awardEndGameXP(){
+  const pname=getActive()?.name;if(!pname)return;
+  let total=S.wordsCleared*1+S.brutalWords*3;
+  if(S.rampageTriggered)total+=15;
+  total+=S.livesGained*20+Math.round(S.bestCombo*0.5)+Math.round(S.score*0.02);
+  total=Math.max(1,total);
+  showXPPopup(`+${total} XP`);
+  setTimeout(()=>awardXP(pname,total),600);
+}
+function renderXPBar(){
+  const p=getActive();if(!p)return;
+  const xp=profXP(p);
+  const avail=(xp.tokens||0)-(xp.spent||0);
+  const pct=Math.min(100,(xp.current/XP_PER_LEVEL(xp.level))*100);
+  document.getElementById('xp-lv').textContent=`LVL ${xp.level}`;
+  document.getElementById('token-count').textContent=avail;
+  const fill=document.getElementById('xp-fill');
+  fill.style.width=pct+'%';
+  fill.className=pct>80?'glow':'';
+  // also update jukebox meta if open
+  document.getElementById('jb-profile-name').textContent=p.name;
+  document.getElementById('jb-xp-info').textContent=`LVL ${xp.level}`;
+  document.getElementById('jb-tokens').textContent=`🎵 ${avail} TOKENS`;
+}
+function showLevelUpToast(lv,avail){
+  const t=document.getElementById('levelup-toast');
+  t.innerHTML=`LEVEL ${lv}<br><span style="font-size:0.65rem;color:#888;letter-spacing:0.15em">${avail} TOKENS AVAILABLE</span>`;
+  t.classList.remove('show');void t.offsetWidth;t.classList.add('show');
+}
+function showXPPopup(txt){
+  const el=document.createElement('div');el.className='xp-popup';el.textContent=txt;
+  document.getElementById('xp-popup-wrap').appendChild(el);
+  setTimeout(()=>el.remove(),1500);
+}
+
+// ═══════════════════════════════════════════
+//  JUKEBOX
+// ═══════════════════════════════════════════
+let trackLibrary=Array(10).fill(null);
+let activeTrackIdx=-1,pendingSlot=-1;
+let musicSource=null,musicLoop=true,musicPlaying=false,musicOffset=0,musicStartAt=0;
+
+function getSlotMeta(pname){
+  try{
+    const all=JSON.parse(localStorage.getItem(KSLOTS))||{};
+    if(!all[pname]){
+      all[pname]=Array(10).fill(null).map((_,i)=>({name:null,unlocked:i<2}));
+      localStorage.setItem(KSLOTS,JSON.stringify(all));
+    }
+    return all[pname];
+  }catch{return Array(10).fill(null).map((_,i)=>({name:null,unlocked:i<2}))}
+}
+function saveSlotMeta(pname,slots){
+  try{const all=JSON.parse(localStorage.getItem(KSLOTS))||{};all[pname]=slots;localStorage.setItem(KSLOTS,JSON.stringify(all))}catch{}
+}
+function doUnlockSlot(idx){
+  const pname=getActive()?.name;if(!pname)return;
+  const p=getProf(pname);const xp=profXP(p);
+  const avail=(xp.tokens||0)-(xp.spent||0);const cost=SLOT_COSTS[idx];
+  if(avail<cost){alert(`NOT ENOUGH TOKENS. HAVE ${avail}, NEED ${cost}.`);return;}
+  xp.spent=(xp.spent||0)+cost;p.xp=xp;saveProf(p);
+  const slots=getSlotMeta(pname);slots[idx].unlocked=true;saveSlotMeta(pname,slots);
+  renderXPBar();renderJukebox();sfx('combo');
+}
+function loadFileIntoSlot(file,idx){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    AC.decodeAudioData(e.target.result,buf=>{
+      trackLibrary[idx]={name:file.name.replace(/\.[^.]+$/,'').slice(0,32),buffer:buf};
+      const pname=getActive()?.name;if(!pname)return;
+      const slots=getSlotMeta(pname);slots[idx].name=trackLibrary[idx].name;saveSlotMeta(pname,slots);
+      renderJukebox();sfx('combo');
+    },()=>alert('Could not decode audio. Try MP3 or OGG.'));
+  };
+  reader.readAsArrayBuffer(file);
+}
+function playSlot(idx){
+  const t=trackLibrary[idx];if(!t)return;
+  if(AC.state==='suspended')AC.resume();
+  stopMusicSilent();
+  activeTrackIdx=idx;
+  musicSource=AC.createBufferSource();
+  musicSource.buffer=t.buffer;musicSource.loop=musicLoop;
+  musicSource.connect(musicGain);
+  const off=musicOffset%t.buffer.duration;
+  musicSource.start(0,off);musicStartAt=AC.currentTime-off;
+  musicPlaying=true;
+  musicSource.onended=()=>{if(!musicLoop)nextTrack()};
+  renderJukebox();
+}
+function stopMusicSilent(){
+  if(musicSource){try{musicSource.stop();musicSource.disconnect()}catch(e){}}
+  musicSource=null;musicPlaying=false;
+}
+function nextTrack(){
+  for(let i=1;i<=10;i++){const idx=(activeTrackIdx+i)%10;if(trackLibrary[idx]){musicOffset=0;playSlot(idx);return;}}
+}
+function clearTrack(idx){
+  const pname=getActive()?.name;if(!pname)return;
+  if(!confirm(`REMOVE TRACK FROM SLOT ${idx+1}?`))return;
+  trackLibrary[idx]=null;
+  if(activeTrackIdx===idx){stopMusicSilent();activeTrackIdx=-1;}
+  const slots=getSlotMeta(pname);slots[idx].name=null;saveSlotMeta(pname,slots);
+  renderJukebox();
+}
+function pickFileForSlot(idx){
+  pendingSlot=idx;
+  document.getElementById('jb-file').value='';
+  document.getElementById('jb-file').click();
+}
+let _jukeboxBack=null;
+function openJukebox(backScr){
+  _jukeboxBack=backScr||startScr;
+  renderXPBar();renderJukebox();
+  allOff();jukeboxScr.classList.add('active');
+}
+function renderJukebox(){
+  const p=getActive();
+  const pname=p?.name||'';
+  const slots=pname?getSlotMeta(pname):Array(10).fill({name:null,unlocked:false});
+  const xp=p?profXP(p):{level:1,current:0,tokens:0,spent:0};
+  const avail=(xp.tokens||0)-(xp.spent||0);
+  const grid=document.getElementById('track-grid');grid.innerHTML='';
+  for(let i=0;i<10;i++){
+    const meta=slots[i],buf=trackLibrary[i];
+    const isPlaying=activeTrackIdx===i&&musicPlaying;
+    const cost=SLOT_COSTS[i];
+    const row=document.createElement('div');
+    if(!meta.unlocked){
+      row.className='track-row slot-locked';
+      row.innerHTML=`<div class="track-num">${i+1}</div><div class="track-name">🔒 LOCKED — ${cost} TOKEN${cost!==1?'S':''}</div><div class="track-badge locked-cost">${cost}T</div><div class="track-actions"><button class="track-btn primary" onclick="doUnlockSlot(${i})" ${avail<cost?'disabled':''}>UNLOCK</button></div>`;
+    } else if(!buf){
+      row.className='track-row slot-empty';
+      row.innerHTML=`<div class="track-num">${i+1}</div><div class="track-name">+ ADD TRACK</div><div class="track-badge">FREE</div><div class="track-actions"><button class="track-btn primary" onclick="pickFileForSlot(${i})">LOAD</button></div>`;
+      row.addEventListener('dragover',e=>{e.preventDefault();row.style.borderColor='#888'});
+      row.addEventListener('dragleave',()=>row.style.borderColor='');
+      row.addEventListener('drop',e=>{e.preventDefault();row.style.borderColor='';const f=e.dataTransfer.files[0];if(f&&f.type.startsWith('audio/'))loadFileIntoSlot(f,i)});
+      row.onclick=e=>{if(!e.target.classList.contains('track-btn'))pickFileForSlot(i)};
+    } else {
+      row.className='track-row slot-filled'+(isPlaying?' now-playing':'');
+      row.innerHTML=`<div class="track-num">${isPlaying?'▶':i+1}</div><div class="track-name">${buf.name}</div><div class="track-badge ${isPlaying?'playing':''}">${isPlaying?'PLAYING':'READY'}</div><div class="track-actions"><button class="track-btn primary" id="jb-play-${i}">${isPlaying?'⏸ PAUSE':'▶ PLAY'}</button><button class="track-btn del" onclick="clearTrack(${i})">✕</button></div>`;
+      document.getElementById(`jb-play-${i}`).onclick=()=>{
+        if(isPlaying){stopMusicSilent();renderJukebox();}else{musicOffset=0;playSlot(i);renderJukebox();}
+      };
+    }
+    grid.appendChild(row);
+  }
+  document.getElementById('jb-back-btn').onclick=()=>{jukeboxScr.classList.remove('active');(_jukeboxBack||startScr).classList.add('active')};
+}
+jukeboxScr.addEventListener('dragover',e=>e.preventDefault());
+jukeboxScr.addEventListener('drop',e=>{
+  e.preventDefault();const f=e.dataTransfer.files[0];if(!f||!f.type.startsWith('audio/'))return;
+  const pname=getActive()?.name;if(!pname)return;
+  const slots=getSlotMeta(pname);
+  const idx=slots.findIndex((s,i)=>s.unlocked&&!trackLibrary[i]);
+  if(idx>=0)loadFileIntoSlot(f,idx);else alert('NO EMPTY UNLOCKED SLOTS.');
+});
+document.getElementById('jb-file').onchange=e=>{
+  const f=e.target.files[0];if(f&&pendingSlot>=0)loadFileIntoSlot(f,pendingSlot);pendingSlot=-1;
+};
+
+// ═══════════════════════════════════════════
+//  AUDIO
+// ═══════════════════════════════════════════
+const AC=new(window.AudioContext||window.webkitAudioContext)();
+const musicGain=AC.createGain();musicGain.gain.value=0.5;musicGain.connect(AC.destination);
+const sfxGain=AC.createGain();sfxGain.gain.value=0.7;sfxGain.connect(AC.destination);
+
+function sfx(type){
+  if(AC.state==='suspended')AC.resume();
+  if(!sfxGain.gain.value)return;
+  const now=AC.currentTime;
+  const osc=(t,f,fEnd,dur,g,gEnd,wave='sine')=>{
+    const o=AC.createOscillator(),v=AC.createGain();o.connect(v);v.connect(sfxGain);
+    o.type=wave;o.frequency.setValueAtTime(f,now+t);if(fEnd)o.frequency.exponentialRampToValueAtTime(fEnd,now+t+dur);
+    v.gain.setValueAtTime(g,now+t);v.gain.exponentialRampToValueAtTime(0.001,now+t+dur);
+    o.start(now+t);o.stop(now+t+dur+0.01);
+  };
+  if(type==='key'){osc(0,880+Math.random()*440,400,0.07,0.15,0.001)}
+  else if(type==='word'){osc(0,260,80,0.13,0.3,0.001,'triangle');osc(0.01,1400,700,0.12,0.18,0.001)}
+  else if(type==='error'){
+    const o=AC.createOscillator(),v=AC.createGain(),d=AC.createWaveShaper();
+    const c=new Float32Array(256);for(let i=0;i<256;i++)c[i]=i<128?1:-1;d.curve=c;
+    o.connect(d);d.connect(v);v.connect(sfxGain);o.type='sawtooth';
+    o.frequency.setValueAtTime(180,now);o.frequency.exponentialRampToValueAtTime(60,now+0.14);
+    v.gain.setValueAtTime(0.3,now);v.gain.exponentialRampToValueAtTime(0.001,now+0.15);
+    o.start(now);o.stop(now+0.16);
+  }
+  else if(type==='rampage'){[220,330,440,660].forEach((f,i)=>osc(i*0.06,f,f*2,0.25,0.18,0.001,'sawtooth'))}
+  else if(type==='combo'){[523,659,784,1047].forEach((f,i)=>osc(i*0.055,f,null,0.18,0.22,0.001))}
+  else if(type==='life'){[261,329,392,523].forEach((f,i)=>osc(0,f,null,0.6+i*0.06,0.2,0.001))}
+  else if(type==='bomb'){
+    const buf=AC.createBuffer(1,~~(AC.sampleRate*0.3),AC.sampleRate);
+    const d=buf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,2);
+    const n=AC.createBufferSource(),v=AC.createGain();n.buffer=buf;n.connect(v);v.connect(sfxGain);
+    v.gain.setValueAtTime(0.5,now);v.gain.exponentialRampToValueAtTime(0.001,now+0.3);n.start(now);n.stop(now+0.31);
+    osc(0,80,30,0.28,0.6,0.001);
+  }
+  else if(type==='clear'){
+    const buf=AC.createBuffer(1,~~(AC.sampleRate*0.4),AC.sampleRate);
+    const d=buf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*0.4;
+    const n=AC.createBufferSource(),f=AC.createBiquadFilter(),v=AC.createGain();
+    n.buffer=buf;n.connect(f);f.connect(v);v.connect(sfxGain);
+    f.type='bandpass';f.frequency.setValueAtTime(800,now);f.frequency.exponentialRampToValueAtTime(4000,now+0.35);f.Q.value=2;
+    v.gain.setValueAtTime(0.4,now);v.gain.exponentialRampToValueAtTime(0.001,now+0.4);n.start(now);n.stop(now+0.41);
+    [1200,1600,2100].forEach((fr,i)=>osc(i*0.04,fr,null,0.3,0.15,0.001));
+  }
+  else if(type==='lose_life'){[220,185,147].forEach((f,i)=>osc(i*0.1,f,f*0.5,0.35,0.25,0.001,'triangle'))}
+  else if(type==='game_over'){[196,165,147,110,82].forEach((f,i)=>osc(i*0.18,f,null,0.4,0.28,0.001,'sawtooth'))}
+  else if(type==='achievement'){[523,659,784,1047,1319].forEach((f,i)=>osc(i*0.07,f,null,0.22,0.14,0.001,'square'))}
+}
+
+// ═══════════════════════════════════════════
+//  PARTICLES
+// ═══════════════════════════════════════════
+let parts=[];
+const canvas=document.getElementById('particles'),ctx=canvas.getContext('2d');
+function rszC(){canvas.width=window.innerWidth;canvas.height=window.innerHeight}
+rszC();window.addEventListener('resize',rszC);
+function spawnParts(x,y,n,mode){
+  const cols={white:'#fff',rampage:`hsl(${15+~~(Math.random()*30)},100%,60%)`,life:'#44ffaa',clear:'#00eeff',bomb:'#ff44bb'};
+  const c=cols[mode]||'#fff';
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2,s=2+Math.random()*4;
+    parts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,size:2+Math.random()*3.5,c});
+  }
+  parts.push({x,y,vx:0,vy:0,life:1,size:mode==='bomb'?50:mode==='clear'?65:28,ring:true,c});
+}
+function drawParts(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  parts=parts.filter(p=>p.life>0);
+  for(const p of parts){
+    if(p.ring){
+      ctx.strokeStyle=p.c+(p.c.startsWith('#')?'88':'');
+      ctx.lineWidth=1.5;ctx.beginPath();
+      ctx.arc(p.x,p.y,p.size*(1.8-p.life)*25,0,Math.PI*2);ctx.stroke();
+      p.life-=0.07;
+    } else {
+      ctx.globalAlpha=p.life;ctx.fillStyle=p.c;
+      ctx.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size);
+      p.x+=p.vx;p.y+=p.vy;p.vy+=0.14;p.life-=0.038;p.size*=0.965;
+    }
+  }
+  ctx.globalAlpha=1;
+}
+
+// ═══════════════════════════════════════════
+//  CONSTANTS & STATE
+// ═══════════════════════════════════════════
+const MAX_LIVES=5,MID_RATIO=0.60,RAMPAGE_CHARS=50,STREAK_LIFE=50;
+const SP_CHANCE_CLEAR=0.04,SP_CHANCE_BOMB=0.08;
+
+function getChaos(lv){return{
+  maxConcurrent:Math.min(12,2+~~(lv/2)),
+  baseSpeed:Math.max(30,80-lv*3.5),
+  sizeMin:lv>=8?0.7:lv>=5?0.85:1.0,
+  sizeMax:lv>=8?1.55:lv>=5?1.25:1.05,
+  colorChaos:lv>=14,
+  tiltMax:lv>=18?25:lv>=12?12:0,
+  missingPct:lv>=26?0.3:lv>=20?0.15:0,
+  spawnBurst:lv>=6,
+}}
+
+const PHASES=[
+  {lv:1, name:'PHASE I',   title:'THE RAIN BEGINS', color:'#888'},
+  {lv:4, name:'PHASE II',  title:'PICKING UP',       color:'#aaa'},
+  {lv:7, name:'PHASE III', title:'STORM RISING',     color:'#ffcc00'},
+  {lv:12,name:'PHASE IV',  title:'CHAOS UNLEASHED',  color:'#ff9900'},
+  {lv:18,name:'PHASE V',   title:'THE VOID OPENS',   color:'#ff6600'},
+  {lv:25,name:'PHASE VI',  title:'NO MERCY',         color:'#ff3300'},
+];
+
+let S={
+  running:false,score:0,lives:MAX_LIVES,
+  wordsCleared:0,activeWords:[],
+  spawnTimeout:null,animFrame:null,lastTime:null,
+  spawnDelay:2400,level:1,wordIdCounter:0,
+  charsSince:0,rampage:false,rampageClears:0,
+  streak:0,bestStreak:0,combo:0,bestCombo:0,
+  noMistakes:true,livesGained:0,brutalWords:0,
+  crossedClears:0,fastClears:0,
+  rampageTriggered:false,spClearUsed:false,spBombUsed:false,
+  lastPhase:-1,priorityId:-1,dangerCount:0,
+  cachedArenaH:500,cachedArenaW:800,
+};
+
+
+
+// ═══════════════════════════════════════════
+//  HUD RENDER
+// ═══════════════════════════════════════════
+function renderLives(){
+  livesEl.innerHTML='';
+  for(let i=0;i<MAX_LIVES;i++){
+    const d=document.createElement('div');
+    d.className='life'+(i>=S.lives?' lost':'');
+    livesEl.appendChild(d);
+  }
+}
+function renderRampBar(){
+  const pct=Math.min(100,(S.charsSince/RAMPAGE_CHARS)*100);
+  rampFill.style.width=pct+'%';
+  const hot=S.rampage;
+  rampFill.className=hot?'hot':pct>50?'building':'';
+  rampLabel.className=hot?'hot':'';
+  rampCount.className=hot?'hot':pct>50?'building':'';
+  rampCount.textContent=hot?'×2':`${S.charsSince}/${RAMPAGE_CHARS}`;
+}
+function renderCombo(){
+  if(S.rampage){comboText.className='ramp';comboText.textContent=`RAMPAGE ×2  ${S.combo>0?S.combo+'×':''}`}
+  else if(S.combo>0){comboText.className='lit';comboText.textContent=`COMBO  ${S.combo}×`}
+  else{comboText.className='';comboText.textContent='COMBO'}
+  streakLabel.textContent=`STREAK ${S.streak}/${STREAK_LIFE}`;
+  streakLabel.className=S.streak>=20?'hot':'';
+  lvBadge.textContent=`LVL ${S.level}`;
+}
+
+// ═══════════════════════════════════════════
+//  POPUPS
+// ═══════════════════════════════════════════
+function showBonus(txt,x,y,color='#ffcc00'){
+  const el=document.createElement('div');el.className='bonus-popup';
+  el.style.cssText=`left:${x}px;top:${y}px;color:${color};transform:translateX(-50%)`;
+  el.textContent=txt;document.body.appendChild(el);
+  setTimeout(()=>el.remove(),1000);
+}
+function showBanner(el,txt,delay=0){
+  const fn=()=>{el.textContent=txt;el.classList.remove('show');void el.offsetWidth;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1600)};
+  delay?setTimeout(fn,delay):fn();
+}
+function showAchToast(ach){
+  achToast.innerHTML=`🏆 ACHIEVEMENT UNLOCKED<br><span style="color:#fff;font-size:0.8rem">${ach.name}</span><br><span style="color:#555;font-size:0.58rem">${ach.desc}</span>`;
+  achToast.classList.remove('show');void achToast.offsetWidth;achToast.classList.add('show');
+}
+function popScore(){scoreEl.classList.remove('pop');void scoreEl.offsetWidth;scoreEl.classList.add('pop')}
+function shakeScreen(){document.body.classList.remove('shake');void document.body.offsetWidth;document.body.classList.add('shake')}
+
+// ═══════════════════════════════════════════
+//  ACH CHECK
+// ═══════════════════════════════════════════
+function chk(id,cond){
+  if(!cond)return;
+  const prof=getActive();if(!prof)return;
+  if(unlockAch(prof.name,id)){const a=ACH.find(x=>x.id===id);if(a)setTimeout(()=>showAchToast(a),400)}
+}
+
+// ═══════════════════════════════════════════
+//  WORD LOGIC
+// ═══════════════════════════════════════════
+function wordScore(w){
+  const l=w.length;
+  if(l<=3)return 2;if(l===4)return 3;if(l===5)return 8;
+  if(l===6)return 10;if(l<=8)return 12;return 15;
+}
+function pickWord(){
+  const lv=S.level;
+  let pool;
+  if(lv<=2)      pool=[...TIERS[0],...TIERS[0],...TIERS[1]];
+  else if(lv<=4) pool=[...TIERS[0],...TIERS[1],...TIERS[1],...TIERS[2]];
+  else if(lv<=7) pool=[...TIERS[0],...TIERS[1],...TIERS[2],...TIERS[2],...TIERS[3]];
+  else if(lv<=14)pool=[...TIERS[0],...TIERS[2],...TIERS[3],...TIERS[3],...TIERS[4]];
+  else           pool=[...TIERS[0],...TIERS[3],...TIERS[4],...TIERS[4]];
+  return pool[~~(Math.random()*pool.length)];
+}
+function applyWordChaos(wo){
+  const ch=getChaos(S.level);
+  const sz=ch.sizeMin+Math.random()*(ch.sizeMax-ch.sizeMin);
+  wo.el.style.fontSize=(sz*1.05)+'rem';
+  if(ch.tiltMax>0)wo.tilt=(Math.random()-0.5)*2*ch.tiltMax;
+  if(ch.colorChaos&&!wo.special)wo.el.style.color=`hsl(${~~(Math.random()*360)},60%,68%)`;
+}
+function wordHTML(w,typed,wo){
+  const ch=getChaos(S.level);
+  const cur=typed||'';
+  const matched=w.slice(0,cur.length);
+  let remaining=w.slice(cur.length);
+  if(ch.missingPct>0&&!wo.special){
+    remaining=remaining.split('').map((c,i)=>(((wo.id*37+i*13)%100)/100<ch.missingPct?'_':c)).join('');
+  }
+  const tilt=wo.tilt?`style="display:inline-block;transform:rotate(${wo.tilt}deg)"`:''
+  return `<span class="matched" ${tilt}>${matched}</span><span class="remaining" ${tilt}>${remaining}</span>`;
+}
+
+// ═══════════════════════════════════════════
+//  SPAWN
+// ═══════════════════════════════════════════
+function spawnWord(forced=null){
+  if(!S.running)return;
+  const ch=getChaos(S.level);
+  if(!forced&&S.activeWords.length>=ch.maxConcurrent)return;
+  const word=forced||pickWord();
+  let special=null;
+  if(!forced){const r=Math.random();if(r<SP_CHANCE_CLEAR)special='clear';else if(r<SP_CHANCE_CLEAR+SP_CHANCE_BOMB)special='bomb';}
+  const el=document.createElement('div');
+  el.className='word-el'+(special?' sp-'+special:'');
+  const maxX=S.cachedArenaW-word.length*16-14;
+  const x=14+Math.random()*Math.max(12,maxX);
+  const spd=ch.baseSpeed*(0.88+Math.random()*0.24);
+  el.style.left=x+'px';el.style.top='-32px';
+  arena.appendChild(el);
+  const wo={id:S.wordIdCounter++,word,x,y:-32,speed:spd,el,crossed:false,lifeConsumed:false,special,spawnTime:performance.now(),tilt:0};
+  applyWordChaos(wo);
+  wo.el.innerHTML=wordHTML(word,'',wo);
+  S.activeWords.push(wo);
+}
+function scheduleSpawn(){
+  clearTimeout(S.spawnTimeout);
+  S.spawnTimeout=setTimeout(()=>{
+    const ch=getChaos(S.level);
+    spawnWord();
+    if(ch.spawnBurst&&Math.random()<0.35&&S.activeWords.length<ch.maxConcurrent-1)
+      setTimeout(()=>spawnWord(),200+Math.random()*280);
+    scheduleSpawn();
+  },S.spawnDelay);
+}
+
+// ═══════════════════════════════════════════
+//  REMOVE / LIFE LOSS
+// ═══════════════════════════════════════════
+function removeWord(wo,cleared,mode){
+  if(cleared){
+    const cls={rampage:'exploding-r',life:'exploding-life',clear:'exploding-clear',bomb:'exploding-bomb'}[mode]||'exploding';
+    wo.el.classList.add(cls);
+    const r=wo.el.getBoundingClientRect();
+    spawnParts(r.left+r.width/2,r.top+r.height/2,mode==='bomb'?32:mode==='clear'?26:18,mode||'white');
+    setTimeout(()=>wo.el.parentNode&&wo.el.parentNode.removeChild(wo.el),540);
+  } else {
+    wo.el.parentNode&&wo.el.parentNode.removeChild(wo.el);
+  }
+  S.activeWords=S.activeWords.filter(x=>x.id!==wo.id);
+}
+function loseLife(wo){
+  removeWord(wo,false);
+  S.charsSince=0;S.rampage=false;S.streak=0;S.combo=0;S.noMistakes=false;
+  renderCombo();renderRampBar();
+  sfx('lose_life');shakeScreen();
+  dangerVig.classList.remove('pulse');void dangerVig.offsetWidth;dangerVig.classList.add('pulse');
+  S.lives--;renderLives();
+  if(S.lives<=0)endGame();
+}
+
+// ═══════════════════════════════════════════
+//  SPECIAL EFFECTS
+// ═══════════════════════════════════════════
+function triggerClearAll(cx,cy){
+  S.spClearUsed=true;sfx('clear');
+  showBanner(spBanner,'BOARD CLEAR!');
+  const victims=[...S.activeWords].filter(w=>w.id!==S._justCleared);
+  victims.forEach((v,i)=>setTimeout(()=>{
+    if(!S.activeWords.find(x=>x.id===v.id))return;
+    const r=v.el.getBoundingClientRect();
+    const pts=Math.round(wordScore(v.word)*(S.rampage?2:1));
+    S.score+=pts;S.wordsCleared++;scoreEl.textContent=S.score;
+    showBonus(`+${pts}`,r.left+r.width/2,r.top,'#00eeff');
+    removeWord(v,true,'clear');
+  },i*60));
+  spawnParts(cx,cy,40,'clear');
+  chk('sp_clear1',true);chk('sp_both',S.spBombUsed);
+}
+function triggerBombKill(cx,cy,excludeId){
+  S.spBombUsed=true;sfx('bomb');
+  const others=S.activeWords.filter(x=>x.id!==excludeId);
+  if(!others.length)return;
+  others.sort((a,b)=>b.y-a.y);
+  const v=others[0];
+  const r=v.el.getBoundingClientRect();
+  const pts=Math.round(wordScore(v.word)*(S.rampage?2:1));
+  S.score+=pts;S.wordsCleared++;scoreEl.textContent=S.score;
+  showBonus(`BOMB +${pts}`,r.left+r.width/2,r.top-8,'#ff44bb');
+  spawnParts(r.left+r.width/2,r.top+r.height/2,28,'bomb');
+  removeWord(v,true,'bomb');
+  chk('sp_bomb1',true);chk('sp_both',S.spClearUsed);
+}
+
+// ═══════════════════════════════════════════
+//  GAME LOOP
+// ═══════════════════════════════════════════
+function gameLoop(ts){
+  if(!S.running)return;
+  const dt=S.lastTime?(ts-S.lastTime)/1000:0;
+  S.lastTime=ts;
+  // Use cached arena dimensions — live rect may be 0 if overlay is active
+  const ar=arena.getBoundingClientRect();
+  if(ar.height>50){S.cachedArenaH=ar.height;S.cachedArenaW=ar.width;}
+  const arH=S.cachedArenaH;
+  const midY=arH*MID_RATIO;
+
+  for(const wo of[...S.activeWords]){
+    wo.y+=wo.speed*dt;
+    wo.el.style.top=wo.y+'px';
+    if(!wo.crossed&&wo.y>=midY){wo.crossed=true;wo.el.classList.add('crossed')}
+    if(wo.y>arH+10&&!wo.lifeConsumed){wo.lifeConsumed=true;loseLife(wo)}
+  }
+  updateHighlight();
+  updatePriority(midY);
+  updateDangerZone(midY);
+  drawParts();
+
+  const newLvl=1+~~(S.wordsCleared/8);
+  if(newLvl!==S.level){
+    S.level=newLvl;
+    S.spawnDelay=Math.max(500,2400-(S.level-1)*120);
+    scheduleSpawn();
+    chk('lv10',S.level>=10);chk('lv20',S.level>=20);chk('lv30',S.level>=30);
+    checkPhase(S.level);renderCombo();
+  }
+  S.animFrame=requestAnimationFrame(gameLoop);
+}
+function updateHighlight(){
+  const cur=typedEl.value.toLowerCase();
+  for(const wo of S.activeWords){
+    wo.el.innerHTML=wordHTML(wo.word,cur,wo);
+    const matches=cur.length>0&&wo.word.startsWith(cur);
+    wo.el.classList.toggle('active-target',matches);
+  }
+}
+function updatePriority(midY){
+  if(!S.activeWords.length){S.priorityId=-1;return}
+  const closest=S.activeWords.reduce((a,b)=>b.y>a.y?b:a);
+  if(closest.id!==S.priorityId){
+    S.activeWords.forEach(w=>w.el.classList.remove('priority-target'));
+    closest.el.classList.add('priority-target');
+    S.priorityId=closest.id;
+  }
+}
+function updateDangerZone(midY){
+  const crossed=S.activeWords.filter(w=>w.crossed).length;
+  if(crossed>S.dangerCount&&crossed>0){
+    dangerVig.classList.remove('pulse');void dangerVig.offsetWidth;dangerVig.classList.add('pulse');
+  }
+  S.dangerCount=crossed;
+  S.activeWords.forEach(w=>{
+    w.el.classList.toggle('danger-zone',w.crossed&&!w.el.classList.contains('sp-clear')&&!w.el.classList.contains('sp-bomb'));
+  });
+}
+function checkPhase(lv){
+  const ph=PHASES.slice().reverse().find(p=>lv>=p.lv);
+  if(!ph||ph.lv===S.lastPhase)return;
+  S.lastPhase=ph.lv;
+  phaseNameEl.textContent=ph.name;phaseTitleEl.textContent=ph.title;
+  phaseTitleEl.style.color=ph.color;
+  phaseBanner.classList.remove('show');void phaseBanner.offsetWidth;phaseBanner.classList.add('show');
+  setTimeout(()=>phaseBanner.classList.remove('show'),2300);
+}
+
+// ═══════════════════════════════════════════
+//  INPUT
+// ═══════════════════════════════════════════
+typedEl.addEventListener('input',()=>{
+  if(!S.running)return;
+  if(AC.state==='suspended')AC.resume();
+  const val=typedEl.value.toLowerCase();
+  const exact=S.activeWords.find(w=>w.word===val);
+  if(exact){doSubmit(exact);return}
+  const any=S.activeWords.some(w=>w.word.startsWith(val));
+  if(!any&&val.length>0){flashErr();breakProgress();}
+  else if(val.length>0){sfx('key');quakeMatch(val);}
+},{passive:true});
+typedEl.addEventListener('keydown',e=>{
+  if(!S.running)return;
+  if(e.key==='Enter'||e.key===' '){
+    e.preventDefault();
+    const val=typedEl.value.toLowerCase().trim();
+    const m=S.activeWords.find(w=>w.word===val);
+    if(m)doSubmit(m);else if(val.length>0){flashErr();breakProgress();}
+  }
+});
+function flashErr(){
+  S.noMistakes=false;
+  sfx('error');
+  typedEl.classList.remove('error');void typedEl.offsetWidth;
+  typedEl.classList.add('error');typedEl.value='';
+  setTimeout(()=>typedEl.classList.remove('error'),220);
+}
+function breakProgress(){
+  S.charsSince=0;S.rampage=false;S.streak=0;S.combo=0;
+  renderCombo();renderRampBar();
+}
+function quakeMatch(cur){
+  for(const wo of S.activeWords){
+    if(wo.word.startsWith(cur)){
+      const cls=S.rampage?'quake-r':'quake';
+      wo.el.classList.remove('quake','quake-r');void wo.el.offsetWidth;wo.el.classList.add(cls);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════
+//  SUBMIT
+// ═══════════════════════════════════════════
+function getSpeedGrade(age,len){
+  const base=Math.max(0.5,len*0.12);
+  if(age<base*0.5)return{label:'S',color:'#ffcc00'};
+  if(age<base)    return{label:'A',color:'#88ff88'};
+  if(age<base*2)  return{label:'B',color:'#8888ff'};
+  return null;
+}
+function doSubmit(wo){
+  const now=performance.now();
+  const r=wo.el.getBoundingClientRect();
+  const cx=r.left+r.width/2,cy=r.top;
+  const age=(now-wo.spawnTime)/1000;
+
+  // speed tracking
+  if(age<0.8)chk('spd_fast',true);
+  if(age<1.5){S.fastClears++;chk('spd_5fast',S.fastClears>=5)}
+  if(wo.crossed){S.crossedClears++;chk('spd_cross',S.crossedClears>=10)}
+  const grade=getSpeedGrade(age,wo.word.length);
+  if(grade&&!wo.special){
+    const g=document.createElement('div');g.className='speed-grade';
+    g.textContent=grade.label;g.style.color=grade.color;
+    document.body.appendChild(g);setTimeout(()=>g.remove(),1200);
+  }
+
+  // rampage
+  S.charsSince+=wo.word.length;
+  if(!S.rampage&&S.charsSince>=RAMPAGE_CHARS){
+    S.rampage=true;S.rampageTriggered=true;
+    showBanner(rampBanner,'RAMPAGE!');sfx('rampage');chk('ramp1',true);
+  }
+  if(S.rampage)S.rampageClears++;
+
+  const pts=Math.round(wordScore(wo.word)*(S.rampage?2:1));
+  S.score+=pts;S.wordsCleared++;
+  S.combo++;S.streak++;
+  if(S.combo>S.bestCombo)S.bestCombo=S.combo;
+  if(S.streak>S.bestStreak)S.bestStreak=S.streak;
+  scoreEl.textContent=S.score;popScore();
+  S.activeWords.forEach(w=>w.el.classList.remove('priority-target'));
+  S.priorityId=-1;
+  renderCombo();renderRampBar();
+
+  // brutal
+  if(wo.word.length>=9){S.brutalWords++;chk('b1',true);chk('b10',S.brutalWords>=10);chk('b50',S.brutalWords>=50)}
+  // score ach
+  chk('cent',S.score>=100);chk('kilo',S.score>=1000);chk('five_k',S.score>=5000);
+  chk('ten_k',S.score>=10000);chk('twenty_k',S.score>=20000);
+  chk('w50',S.wordsCleared>=50);chk('w200',S.wordsCleared>=200);chk('w500',S.wordsCleared>=500);
+  chk('c10',S.combo>=10);chk('c25',S.combo>=25);chk('c50',S.combo>=50);chk('c100',S.combo>=100);
+  chk('ramp_20',S.rampageClears>=20);
+
+  // combo popups
+  if(S.combo===5) showBonus('COMBO!',cx,cy,'#ffcc00');
+  else if(S.combo===10)showBonus('ON FIRE!',cx,cy,'#ff9900');
+  else if(S.combo===20)showBonus('UNSTOPPABLE!',cx,cy,'#ff8800');
+  else if(S.combo===50)showBonus('GODLIKE!',cx,cy,'#ff6600');
+  else if(S.combo===100)showBonus('SINGULARITY!',cx,cy,'#ff3300');
+  if(S.combo>=10)sfx('combo');
+
+  // streak life back
+  if(S.streak>0&&S.streak%STREAK_LIFE===0){
+    if(S.lives<MAX_LIVES){
+      S.lives++;S.livesGained++;renderLives();
+      const dots=livesEl.querySelectorAll('.life');
+      const dot=dots[S.lives-1];
+      if(dot){dot.classList.add('gained');setTimeout(()=>dot.classList.remove('gained'),700)}
+      const msgs=["PERSEVERANCE REWARDED.","ERRORS ARE FOR OTHERS.","THE RAIN BOWS TO YOU.","FLAWLESS. SIMPLY FLAWLESS.","UNTOUCHABLE. LIFE RESTORED.","THEIR FINGERS BLED. YOURS DIDN'T."];
+      showBanner(lifeBanner,msgs[~~(Math.random()*msgs.length)]);
+      sfx('life');spawnParts(cx,cy,30,'life');
+      chk('life3',S.livesGained>=3);
+    } else showBonus('+PERFECT',cx,cy,'#44ffaa');
+    chk('str50',S.streak>=50);chk('str100',S.streak>=100);chk('str200',S.streak>=200);
+  }
+
+  showBonus(`+${pts}`,cx,cy-16,S.rampage?'#ff6600':'#ffcc00');
+  sfx(wo.special==='clear'?'clear':wo.special==='bomb'?'bomb':'word');
+  const expMode=S.rampage?'rampage':'white';
+  S._justCleared=wo.id;
+  removeWord(wo,true,wo.special==='clear'?'clear':wo.special==='bomb'?'bomb':expMode);
+  typedEl.value='';typedEl.classList.remove('error');
+
+  if(wo.special==='clear')setTimeout(()=>triggerClearAll(cx,cy),120);
+  else if(wo.special==='bomb')setTimeout(()=>triggerBombKill(cx,cy,wo.id),120);
+}
+
+// ═══════════════════════════════════════════
+//  START / END
+// ═══════════════════════════════════════════
+function allOff(){[startScr,overScr,lbScr,achScr,profileScr,jukeboxScr].forEach(s=>s.classList.remove('active'))}
+function showLB(hs=null){renderLB(hs);allOff();lbScr.classList.add('active')}
+
+function startGame(){
+  S.running=false;
+  cancelAnimationFrame(S.animFrame);clearTimeout(S.spawnTimeout);
+  for(const wo of S.activeWords)wo.el.parentNode&&wo.el.parentNode.removeChild(wo.el);
+  parts=[];
+  [rampBanner,lifeBanner,spBanner].forEach(b=>b.classList.remove('show'));
+  phaseBanner.classList.remove('show');
+  dangerVig.classList.remove('pulse');
+  deathOverlay.style.opacity='0';deathOverlay.classList.remove('dying');
+  document.body.classList.remove('shake');
+
+  Object.assign(S,{
+    score:0,lives:MAX_LIVES,wordsCleared:0,activeWords:[],
+    spawnDelay:2400,level:1,lastTime:null,wordIdCounter:0,
+    charsSince:0,rampage:false,rampageClears:0,
+    streak:0,bestStreak:0,combo:0,bestCombo:0,
+    noMistakes:true,livesGained:0,brutalWords:0,
+    crossedClears:0,fastClears:0,
+    rampageTriggered:false,spClearUsed:false,spBombUsed:false,
+    lastPhase:-1,priorityId:-1,dangerCount:0,
+  });
+  xpReveal.innerHTML='';
+  scoreEl.textContent='0';renderLives();renderCombo();renderRampBar();
+  typedEl.value='';typedEl.classList.remove('error');
+
+  // Cache arena size BEFORE allOff (screens don't affect layout since arena is in flow)
+  const ar=arena.getBoundingClientRect();
+  if(ar.height>50){S.cachedArenaH=ar.height;S.cachedArenaW=ar.width;}
+  allOff();
+
+  const prof=getActive();
+  if(prof){
+    prof.stats=prof.stats||{};prof.stats.games=(prof.stats.games||0)+1;saveProf(prof);
+    chk('g10',prof.stats.games>=10);chk('g50',prof.stats.games>=50);
+  }
+
+  S.running=true;
+  spawnWord();setTimeout(()=>spawnWord(),700);
+  scheduleSpawn();
+  S.animFrame=requestAnimationFrame(gameLoop);
+  typedEl.focus();
+}
+
+function endGame(){
+  S.running=false;
+  cancelAnimationFrame(S.animFrame);clearTimeout(S.spawnTimeout);
+  chk('clean',S.noMistakes&&S.wordsCleared>0);
+  if(S.rampageTriggered){
+    const p=getActive();
+    if(p){p.stats=p.stats||{};p.stats.rampageGames=(p.stats.rampageGames||0)+1;saveProf(p);chk('ramp5',p.stats.rampageGames>=5)}
+  }
+  const bd=loadLB();if(bd.length&&S.score>=bd[0].score)chk('top1',true);
+  const prevBest=getBest();const isNew=S.score>prevBest;if(isNew)setBest(S.score);
+  sfx('game_over');
+
+  // Death animation, then show screen
+  deathOverlay.classList.remove('dying');void deathOverlay.offsetWidth;deathOverlay.classList.add('dying');
+  setTimeout(()=>{
+    deathOverlay.classList.remove('dying');deathOverlay.style.opacity='0';
+    finalSc.textContent=S.score;
+    finalSc.style.color=isNew?'var(--combo)':'';
+    finalSub.innerHTML=`${S.wordsCleared} WORDS &nbsp;·&nbsp; COMBO ${S.bestCombo}× &nbsp;·&nbsp; STREAK ${S.bestStreak}`
+      +(isNew?'<br><span style="color:var(--combo);font-size:0.78rem;letter-spacing:0.2em">★ NEW BEST</span>':'');
+
+    // XP breakdown
+    const lines=[
+      [S.wordsCleared*1,`${S.wordsCleared} WORDS`],
+      [S.brutalWords*3,`${S.brutalWords} BRUTAL`],
+      [S.rampageTriggered?15:0,'RAMPAGE BONUS'],
+      [S.livesGained*20,`${S.livesGained} LIVES EARNED`],
+      [Math.round(S.bestCombo*0.5),`COMBO ×${S.bestCombo}`],
+      [Math.round(S.score*0.02),'SCORE BONUS'],
+    ];
+    const total=Math.max(1,lines.reduce((a,l)=>a+l[0],0));
+    xpReveal.innerHTML='';
+    lines.filter(l=>l[0]>0).forEach(([xp,label],i)=>{
+      const el=document.createElement('div');el.className='xp-line';
+      el.style.animationDelay=`${i*0.12}s`;
+      el.textContent=`+${xp} XP  ${label}`;xpReveal.appendChild(el);
+    });
+    const tot=document.createElement('div');tot.className='xp-line total';
+    tot.style.animationDelay=`${lines.filter(l=>l[0]>0).length*0.12}s`;
+    tot.textContent=`= ${total} XP TOTAL`;xpReveal.appendChild(tot);
+
+    awardEndGameXP();
+    const p=getActive();nameInput.value=p?p.name:'';
+    overScr.classList.add('active');setTimeout(()=>nameInput.focus(),80);
+  },1200);
+}
+
+// ═══════════════════════════════════════════
+//  LEADERBOARD
+// ═══════════════════════════════════════════
+function renderLB(hs=null){
+  const b=loadLB();lbBody.innerHTML='';
+  if(!b.length){lbBody.innerHTML=`<tr><td colspan="6" style="color:#333;text-align:center;padding:22px;font-size:0.68rem;letter-spacing:0.18em">NO SCORES YET</td></tr>`;return}
+  b.forEach((e,i)=>{
+    const tr=document.createElement('tr');
+    if(hs!==null&&e.score===hs)tr.classList.add('highlight');
+    tr.classList.add(`r${i+1}`);
+    tr.innerHTML=`<td><span class="rank-num">${i+1}.</span>${e.name}</td><td>${e.words||0}</td><td>${e.combo||0}×</td><td>${e.streak||0}</td><td style="font-size:0.7rem">${e.date||''}</td><td>${e.score}</td>`;
+    lbBody.appendChild(tr);
+  });
+}
+
+// ═══════════════════════════════════════════
+//  ACHIEVEMENTS SCREEN
+// ═══════════════════════════════════════════
+function renderAchScreen(backScr){
+  const p=getActive();const ul=p?p.achIds:[];const dates=p?.achDates||{};
+  document.getElementById('ach-profile-name').textContent=p?`PROFILE: ${p.name}`:'';
+  document.getElementById('ach-progress').textContent=`${ul.length} / ${ACH.length} UNLOCKED`;
+  achGrid.innerHTML='';
+  ACH.forEach(a=>{
+    const done=ul.includes(a.id);
+    const c=document.createElement('div');c.className='ach-card'+(done?' unlocked':'');
+    c.innerHTML=`<div class="ach-icon">${a.icon}</div><div class="ach-name">${a.name}</div><div class="ach-desc">${a.desc}</div>${done&&dates[a.id]?`<div class="ach-date">${dates[a.id]}</div>`:''}`;
+    achGrid.appendChild(c);
+  });
+  document.getElementById('ach-back-btn').onclick=()=>{achScr.classList.remove('active');(backScr||startScr).classList.add('active')};
+}
+
+// ═══════════════════════════════════════════
+//  PROFILE SCREEN
+// ═══════════════════════════════════════════
+function renderProfileScreen(){
+  const ps=gp(),act=getActive();profileList.innerHTML='';
+  if(!ps.length){
+    const e=document.createElement('div');
+    e.style.cssText='color:#555;font-size:0.68rem;letter-spacing:0.18em;padding:10px';
+    e.textContent='NO PROFILES — CREATE ONE BELOW';profileList.appendChild(e);return;
+  }
+  ps.forEach(p=>{
+    const row=document.createElement('div');
+    row.className='profile-row'+(act&&p.name===act.name?' active-profile':'');
+    row.innerHTML=`<span class="profile-name">${p.name}</span><span class="profile-ach-count">${(p.achIds||[]).length}/${ACH.length} ACH · LVL ${(p.xp||{level:1}).level}</span>`;
+    row.onclick=()=>{setActive(p.name);renderProfileScreen();renderXPBar()};
+    profileList.appendChild(row);
+  });
+}
+
+// ═══════════════════════════════════════════
+//  BUTTONS
+// ═══════════════════════════════════════════
+document.getElementById('create-profile-btn').onclick=()=>{
+  const n=document.getElementById('new-profile-input').value;
+  const p=createProf(n);if(p){setActive(p.name);document.getElementById('new-profile-input').value='';renderProfileScreen();renderXPBar();}
+};
+document.getElementById('new-profile-input').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('create-profile-btn').click()});
+document.getElementById('profile-play-btn').onclick=()=>{
+  const p=getActive();if(!p){alert('SELECT OR CREATE A PROFILE FIRST');return}
+  document.getElementById('start-profile-line').textContent=`PLAYING AS  ${p.name}`;
+  renderXPBar();allOff();startScr.classList.add('active');
+};
+document.getElementById('profile-ach-btn').onclick=()=>{
+  const p=getActive();if(!p){alert('SELECT A PROFILE FIRST');return}
+  renderAchScreen(profileScr);allOff();achScr.classList.add('active');
+};
+document.getElementById('profile-wipe-btn').onclick=()=>{
+  const p=getActive();if(!p){alert('SELECT A PROFILE TO WIPE');return}
+  if(confirm(`WIPE ALL DATA FOR ${p.name}? THIS CANNOT BE UNDONE.`)){
+    wipeProf(p.name);localStorage.removeItem(KACT);renderProfileScreen();
+  }
+};
+document.getElementById('start-btn').onclick=startGame;
+document.getElementById('lb-btn-home').onclick=()=>showLB();
+document.getElementById('ach-btn-home').onclick=()=>{renderAchScreen(startScr);allOff();achScr.classList.add('active')};
+document.getElementById('jukebox-btn-home').onclick=()=>openJukebox(startScr);
+document.getElementById('switch-profile-btn').onclick=()=>{allOff();profileScr.classList.add('active');renderProfileScreen()};
+document.getElementById('save-btn').onclick=()=>{addLBEntry(nameInput.value,S.score,S.wordsCleared,S.bestCombo,S.bestStreak);showLB(S.score)};
+document.getElementById('skip-btn').onclick=()=>showLB();
+nameInput.addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('save-btn').click()});
+document.getElementById('play-btn-lb').onclick=startGame;
+document.getElementById('home-btn-lb').onclick=()=>{allOff();startScr.classList.add('active')};
+document.addEventListener('pointerdown',()=>{if(AC.state==='suspended')AC.resume()},{once:true});
+
+// ═══════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════
+renderProfileScreen();renderLives();renderCombo();renderRampBar();renderXPBar();
+</script>
+</body>
+</html>
